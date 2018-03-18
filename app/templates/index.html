@@ -1,0 +1,7 @@
+{% extends "base.html" %}
+
+{% block title %}Go Go Car{% endblock %}
+
+{% block page_content %}
+<h1>这里是首页，Hello, {% if current_user.is_authenticated %}{{ current_user.name }}{% else %}Stranger{% endif %}!</h1>
+{% endblock %}

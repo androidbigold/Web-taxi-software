@@ -1,0 +1,7 @@
+{% extends "blockchain/base.html" %}
+
+{% block page_content %}
+<h1>This is the home page，Hello, {% if current_user.is_authenticated %}{{ current_user.name }}{% else %}Stranger{% endif %}!</h1>
+<p>Your ip address is : {{ ip_address }}</p>
+<p>{{ response }}</p>
+{% endblock %}
