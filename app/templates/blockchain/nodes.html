@@ -3,5 +3,8 @@
 {% block page_content %}
 <h1>This is the home page，Hello, {% if current_user.is_authenticated %}{{ current_user.name }}{% else %}Stranger{% endif %}!</h1>
 <p>Your ip address is : {{ ip_address }}</p>
+<p><a class="btn btn-primary" href="{{ url_for('blockchain.register_local_node') }}">Register your node</a></p>
+<p><a class="btn btn-primary" href="{{ url_for('blockchain.get_nodes') }}">Get nodes list</a></p>
+<p><a class="btn btn-primary" href="{{ url_for('blockchain.remove_local_node') }}">Remove your node</a></p>
 <p>{{ response }}</p>
 {% endblock %}

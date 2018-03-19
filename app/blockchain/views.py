@@ -4,8 +4,7 @@ from .Cryptography import *
 from .Block import *
 from .forms import TransactionForm
 from config import server_address
-import urllib.request
-import urllib.parse
+import requests
 from urllib.error import HTTPError
 import json
 
@@ -127,27 +126,30 @@ def register_local_node():
     global ip
     url = 'http://127.0.0.1:5000/blockchain/nodes/register_remote'
     postdict = {
-        'nodes': 'http://' + str(ip) + ':5000'
+        'nodes': 'http://127.0.0.1:5001'
     }
-    data = bytes(urllib.parse.urlencode(postdict, encoding='utf-8'), 'utf-8')
+
+    blockchain_local.register_node('http://127.0.0.1:5000')
+
     try:
-        req = urllib.request.urlopen(url, data=data)
+        requests.post(url, json=postdict)
     except HTTPError as e:
-        return e.read(), 500
+        flash('Error: register failed')
+        return render_template('/blockchain/response.html', response=e.read())
     else:
-        return jsonify(req.read()), 200
+        flash('Your node has been registered')
+        return render_template('/blockchain/nodes.html', ip_address=ip)
 
 
 @blockchain.route('/nodes/register_remote', methods=['GET', 'POST'])
 def register_remote_node():
     values = request.get_json()
 
-    nodes_list = values.get('nodes')
-    if nodes_list is None:
+    node = values.get('nodes')
+    if node is None:
         return "Error: Please supply a valid list of nodes", 400
 
-    for node in nodes_list:
-        blockchain_local.register_node(node)
+    blockchain_local.register_node(node)
 
     response = {
         'message': 'New nodes have been added',
@@ -161,19 +163,41 @@ def get_nodes():
     response = {
         'nodes': list(blockchain_local.nodes),
     }
-    return jsonify(response), 200
+    return render_template('/blockchain/response.html',
+                           response=json.dumps(response,
+                                               indent=4).replace('\\n',
+                                                                 '<br>').replace(',', '<br>'))
 
 
-@blockchain.route('/nodes/remove', methods=['POST'])
-def remove_nodes():
+@blockchain.route('/nodes/remove_local', methods=['GET', 'POST'])
+def remove_local_node():
+    global ip
+    url = 'http://127.0.0.1:5000/blockchain/nodes/remove_remote'
+    postdict = {
+        'nodes': 'http://127.0.0.1:5001'
+    }
+
+    blockchain_local.remove_node('http://127.0.0.1:5000')
+
+    try:
+        requests.post(url, json=postdict)
+    except HTTPError as e:
+        flash('Error: remove failed')
+        return render_template('/blockchain/response.html', response=e.read())
+    else:
+        flash('Your node has been removed')
+        return render_template('/blockchain/nodes.html', ip_address=ip)
+
+
+@blockchain.route('/nodes/remove_remote', methods=['GET', 'POST'])
+def remove_remote_node():
     values = request.get_json()
 
-    nodes_list = values.get('nodes')
-    if nodes_list is None:
+    node = values.get('nodes')
+    if node is None:
         return "Error: Please supply a valid list of nodes", 400
 
-    for node in nodes_list:
-        blockchain_local.remove_node(node)
+    blockchain_local.remove_node(node)
 
     response = {
         'message': 'The nodes have been removed',
