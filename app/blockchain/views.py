@@ -2,11 +2,12 @@ from flask import Flask, jsonify, request, render_template, redirect, url_for, f
 from . import blockchain
 from .Cryptography import *
 from .Block import *
-from .forms import TransactionForm
-from config import server_address
+from .forms import TransactionForm, BindWalletForm
 import requests
 from urllib.error import HTTPError
 import json
+from config import server_address
+import threading
 
 # IP address of this node
 ip = None
@@ -30,43 +31,90 @@ def nodes():
     return render_template('blockchain/nodes.html', ip_address=ip)
 
 
-@blockchain.route('/mine', methods=['GET'])
+@blockchain.route('/mine', methods=['GET', 'POST'])
 def mine():
-    # We run the proof of work algorithm to get the next proof...
-    last_block = blockchain_local.last_block
-    last_proof = last_block['proof']
-    proof = blockchain_local.proof_of_work(last_proof)
+    global node_identifier
+    form = BindWalletForm()
 
-    # 给工作量证明的节点提供奖励.
-    # 发送者为 "0" 表明是新挖出的币
-    blockchain_local.new_transaction(
-        sender="0",
-        recipient=node_identifier,
-        amount=10,
-        signature="0",
-    )
+    if form.validate_on_submit():
+        node_identifier = form.wallet_address.data
 
-    # Forge the new Block by adding it to the chain
-    block = blockchain_local.new_block(proof, None)
+    # 检查是否绑定挖矿钱包
+    if node_identifier == '':
+        flash('Please bind a wallet firstly')
+        return render_template('blockchain/mine.html', form=form)
 
-    response = {
-        'message': "New Block Forged",
-        'index': block['index'],
-        'transactions': block['transactions'],
-        'proof': block['proof'],
-        'previous_hash': block['previous_hash'],
-    }
-    return render_template('/blockchain/response.html',
-                           response=json.dumps(response,
-                                               indent=4).replace('\\n',
-                                                                 '<br>').replace(',', '<br>'))
+    form.wallet_address.data = node_identifier
+    return render_template('blockchain/mine.html', form=form)
 
 
-@blockchain.route('/transactions', methods=['GET', 'POST'])
-def transaction():
+class MineThread(threading.Thread):
+    def __init__(self):
+        threading.Thread.__init__(self)
+
+    def run(self):
+        while True:
+            blockchain_local.mine_start()
+            # We run the proof of work algorithm to get the next proof...
+            last_block = blockchain_local.last_block
+            last_proof = last_block['proof']
+            proof = blockchain_local.proof_of_work(last_proof)
+
+            if proof == -1:
+                break
+
+            # 给工作量证明的节点提供奖励.
+            # 发送者为 "0" 表明是新挖出的币
+            blockchain_local.new_transaction(
+                sender="0",
+                recipient=node_identifier,
+                amount=10,
+                signature="0",
+            )
+
+            # Forge the new Block by adding it to the chain
+            blockchain_local.new_block(proof, None)
+
+            # response = {
+            #     'message': "New Block Forged",
+            #     'index': block['index'],
+            #     'transactions': block['transactions'],
+            #     'proof': block['proof'],
+            #     'previous_hash': block['previous_hash'],
+            # }
+            # return render_template('/blockchain/response.html',
+            #                        response=json.dumps(response,
+            #                                            indent=4).replace('\\r\\n',
+            #                                                              '<br>').replace(',', '<br>'))
+
+
+@blockchain.route('/mine/start', methods=['GET', 'POST'])
+def mine_start():
+    mine_thread = MineThread()
+    mine_thread.start()
+    flash('mine start')
+
+    global node_identifier
+    form = BindWalletForm()
+    form.wallet_address.data = node_identifier
+    return render_template('blockchain/mine.html', form=form)
+
+
+@blockchain.route('/mine/stop', methods=['GET', 'POST'])
+def mine_stop():
+    blockchain_local.mine_stop()
+    flash('mine stop')
+
+    global node_identifier
+    form = BindWalletForm()
+    form.wallet_address.data = node_identifier
+    return render_template('blockchain/mine.html', form=form)
+
+
+@blockchain.route('/transactions_local', methods=['GET', 'POST'])
+def transaction_local():
     form = TransactionForm()
     if form.validate_on_submit():
-        global sender, recipient, amount
         sender = form.sender.data
         recipient = form.recipient.data
         amount = form.amount.data
@@ -74,7 +122,6 @@ def transaction():
         # 对交易信息签名
         message = str(sender) + str(recipient) + str(amount)
         try:
-            global signature
             signature = signature_generation(message, private_key)
         except:
             flash('invalid message')
@@ -87,13 +134,48 @@ def transaction():
                 if index == -1:
                     flash('invalid key')
                 else:
-                    flash('Transaction will be added to Block {0}'.format(index))
-                    form.sender.data = ''
-                    form.recipient.data = ''
-                    form.amount.data = 0.0
-                    form.private_key.data = ''
-                    return render_template('blockchain/transactions.html', form=form)
+                    url = 'http://127.0.0.1:5000/blockchain/transactions_remote'
+                    postdict = {
+                        'sender': sender,
+                        'recipient': recipient,
+                        'amount': amount,
+                        'signature': signature
+                    }
+                    try:
+                        requests.post(url, json=postdict)
+                    except HTTPError as e:
+                        flash('Error: Broadcast failed')
+                        return render_template('blockchain/response.html', response=e.read())
+                    else:
+                        flash('Transaction will be added to Block {0}'.format(index))
+                        form.sender.data = ''
+                        form.recipient.data = ''
+                        form.amount.data = 0.0
+                        form.private_key.data = ''
+                        return render_template('blockchain/transactions.html', form=form)
     return render_template('blockchain/transactions.html', form=form)
+
+
+@blockchain.route('/transactions_remote', methods=['GET', 'POST'])
+def transaction_remote():
+    values = request.get_json()
+
+    # 检查POST数据
+    required = ['sender', 'recipient', 'amount', 'signature']
+    if not all(k in values for k in required):
+        return 'Missing values', 400
+
+    # 验证签名
+    try:
+        index = blockchain_local.new_transaction(values['sender'], values['recipient'],
+                                                 values['amount'], values['signature'])
+    except:
+        return 'Error: add transaction failed', 400
+    else:
+        if index == -1:
+            return 'Error: invalid transaction', 400
+        else:
+            return jsonify(values), 200
 
 
 @blockchain.route('/chain', methods=['GET'])
@@ -104,7 +186,7 @@ def full_chain():
     }
     return render_template('/blockchain/response.html',
                            response=json.dumps(response,
-                                               indent=4).replace('\\n',
+                                               indent=4).replace('\\r\\n',
                                                                  '<br>').replace(',', '<br>'))
 
 
@@ -124,15 +206,30 @@ def obtain_wallet():
 @blockchain.route('/nodes/register_local', methods=['GET', 'POST'])
 def register_local_node():
     global ip
-    url = 'http://127.0.0.1:5000/blockchain/nodes/register_remote'
+    get_url = 'http://' + server_address + '/blockchain/nodes/get_remote'
+    post_url = 'http://' + server_address + '/blockchain/nodes/register_remote'
     postdict = {
         'nodes': 'http://127.0.0.1:5001'
     }
 
-    blockchain_local.register_node('http://127.0.0.1:5000')
+    blockchain_local.register_node(postdict['nodes'])
+    try:
+        r = requests.get(get_url)
+    except HTTPError as e:
+        flash('Error: get remote nodes failed')
+        return render_template('/blockchain/response.html', response=e.read())
+    else:
+        nodes = r.json().get('nodes')
+        for node in nodes:
+            blockchain_local.register_node('http://' + node)
+            url = 'http://' + node + '/blockchain/nodes/register_remote_node'
+            try:
+                requests.post(url, json=postdict)
+            except HTTPError:
+                continue
 
     try:
-        requests.post(url, json=postdict)
+        requests.post(post_url, json=postdict)
     except HTTPError as e:
         flash('Error: register failed')
         return render_template('/blockchain/response.html', response=e.read())
@@ -158,8 +255,19 @@ def register_remote_node():
     return jsonify(response), 201
 
 
-@blockchain.route('/nodes/get', methods=['GET'])
-def get_nodes():
+# @blockchain.route('/nodes/get', methods=['GET'])
+# def get_nodes():
+#     response = {
+#         'nodes': list(blockchain_local.nodes),
+#     }
+#     return render_template('/blockchain/response.html',
+#                            response=json.dumps(response,
+#                                                indent=4).replace('\\n',
+#                                                                  '<br>').replace(',', '<br>'))
+
+
+@blockchain.route('/nodes/get_local', methods=['GET'])
+def get_local_nodes():
     response = {
         'nodes': list(blockchain_local.nodes),
     }
@@ -169,18 +277,33 @@ def get_nodes():
                                                                  '<br>').replace(',', '<br>'))
 
 
+@blockchain.route('/nodes/get_remote', methods=['GET'])
+def get_remote_nodes():
+    response = {
+        'nodes': list(blockchain_local.nodes),
+    }
+    return jsonify(response), 200
+
+
 @blockchain.route('/nodes/remove_local', methods=['GET', 'POST'])
 def remove_local_node():
     global ip
-    url = 'http://127.0.0.1:5000/blockchain/nodes/remove_remote'
+    post_url = 'http://' + server_address + '/blockchain/nodes/remove_remote'
     postdict = {
         'nodes': 'http://127.0.0.1:5001'
     }
 
-    blockchain_local.remove_node('http://127.0.0.1:5000')
+    blockchain_local.remove_node(postdict['nodes'])
+    for node in blockchain_local.nodes:
+        url = 'http://' + node + '/blockchain/nodes/remove_remote'
+        try:
+            requests.post(url, postdict)
+        except HTTPError:
+            continue
+    blockchain_local.nodes.clear()
 
     try:
-        requests.post(url, json=postdict)
+        requests.post(post_url, json=postdict)
     except HTTPError as e:
         flash('Error: remove failed')
         return render_template('/blockchain/response.html', response=e.read())

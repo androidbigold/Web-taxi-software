@@ -11,6 +11,8 @@ import requests
 
 
 class Blockchain:
+    is_mine = False
+
     def __init__(self):
         self.current_transactions = []
         self.chain = []
@@ -167,10 +169,12 @@ class Blockchain:
         """
 
         proof = 0
-        while self.valid_proof(last_proof, proof) is False:
+        while self.valid_proof(last_proof, proof) is False and self.is_mine is True:
             proof += 1
-
-        return proof
+        if self.is_mine is False:
+            return -1
+        else:
+            return proof
 
     @staticmethod
     def valid_proof(last_proof: int, proof: int) -> bool:
@@ -185,3 +189,8 @@ class Blockchain:
         guess_hash = hashlib.sha256(guess).hexdigest()
         return guess_hash.find("0000") == 0
 
+    def mine_start(self):
+        self.is_mine = True
+
+    def mine_stop(self):
+        self.is_mine = False

@@ -1,0 +1,12 @@
+{% extends "blockchain/base.html" %}
+{% import "bootstrap/wtf.html" as wtf %}
+
+{% block page_content %}
+<div class="col-sm-9 col-md-10">
+	{{ wtf.quick_form(form) }}
+	<br>
+		<a class="btn btn-primary" href="{{ url_for('blockchain.mine_start') }}">Start</a>
+		<a class="btn btn-primary" href="{{ url_for('blockchain.mine_stop') }}">Stop</a>
+</div>
+<p>{{ response }}</p>
+{% endblock %}

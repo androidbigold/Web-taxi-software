@@ -4,7 +4,7 @@ import os
 
 basedir = os.path.abspath(os.path.dirname(__file__))
 
-server_address = '10.202.5.81:5000'
+server_address = '127.0.0.1:5000'
 
 
 class Config:

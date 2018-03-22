@@ -10,3 +10,7 @@ class TransactionForm(FlaskForm):
     private_key = TextAreaField('Private Key', validators=[Required()])
     submit = SubmitField('Submit')
 
+
+class BindWalletForm(FlaskForm):
+    wallet_address = TextAreaField('Wallet Address', validators=[Required()])
+    bind = SubmitField('Bind')
