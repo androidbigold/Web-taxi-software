@@ -4,14 +4,15 @@
 from .Cryptography import signature_verify
 import hashlib
 import json
-from time import time
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 import requests
+import time
 
 
 class Blockchain:
-    is_mine = False
+    __is_mine = False
+    # __difficult = 5
 
     def __init__(self):
         self.current_transactions = []
@@ -82,7 +83,7 @@ class Blockchain:
 
         # Grab and verify the chains from all the nodes in our network
         for node in neighbours:
-            response = requests.get(f'http://{node}/chain')
+            response = requests.get(f'http://{node}/blockchain/chain_remote')
 
             if response.status_code == 200:
                 length = response.json()['length']
@@ -110,7 +111,7 @@ class Blockchain:
 
         block = {
             'index': len(self.chain) + 1,
-            'timestamp': time(),
+            'timestamp': time.time(),
             'transactions': self.current_transactions,
             'proof': proof,
             'previous_hash': previous_hash or self.hash(self.chain[-1]),
@@ -164,14 +165,14 @@ class Blockchain:
     def proof_of_work(self, last_proof: int) -> int:
         """
         简单的工作量证明:
-         - 查找一个 p' 使得 hash(pp') 以4个0开头
+         - 查找一个 p' 使得 hash(pp') 以difficult个0开头
          - p 是上一个块的证明,  p' 是当前的证明
         """
 
         proof = 0
-        while self.valid_proof(last_proof, proof) is False and self.is_mine is True:
+        while self.valid_proof(last_proof, proof) is False and self.__is_mine is True:
             proof += 1
-        if self.is_mine is False:
+        if self.__is_mine is False:
             return -1
         else:
             return proof
@@ -179,7 +180,7 @@ class Blockchain:
     @staticmethod
     def valid_proof(last_proof: int, proof: int) -> bool:
         """
-        验证证明: 是否hash(last_proof, proof)以4个0开头
+        验证证明: 是否hash(last_proof, proof)以difficult个0开头
         :param last_proof: Previous Proof
         :param proof: Current Proof
         :return: True if correct, False if not.
@@ -187,10 +188,11 @@ class Blockchain:
 
         guess = f'{last_proof}{proof}'.encode()
         guess_hash = hashlib.sha256(guess).hexdigest()
-        return guess_hash.find("0000") == 0
+        return guess_hash.find('00000') == 0
 
     def mine_start(self):
-        self.is_mine = True
+        self.__is_mine = True
 
     def mine_stop(self):
-        self.is_mine = False
+        self.__is_mine = False
+

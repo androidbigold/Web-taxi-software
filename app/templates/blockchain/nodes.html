@@ -1,7 +1,7 @@
 {% extends "blockchain/base.html" %}
 
 {% block page_content %}
-<h1>This is the home page，Hello, {% if current_user.is_authenticated %}{{ current_user.name }}{% else %}Stranger{% endif %}!</h1>
+<h1>This is the home page，Hello</h1>
 <p>Your ip address is : {{ ip_address }}</p>
 <p><a class="btn btn-primary" href="{{ url_for('blockchain.register_local_node') }}">Register your node</a></p>
 <p><a class="btn btn-primary" href="{{ url_for('blockchain.get_local_nodes') }}">Get nodes list</a></p>

@@ -8,10 +8,20 @@ from urllib.error import HTTPError
 import json
 from config import server_address
 import threading
+import socket
 
-# IP address of this node
-ip = None
 
+def get_host_ip():
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(('8.8.8.8', 80))
+        ip = s.getsockname()[0]
+    finally:
+        s.close()
+    return ip
+
+
+ip = ''
 # Address of this node for mine
 node_identifier = ''
 
@@ -27,7 +37,7 @@ def index():
 @blockchain.route('/nodes', methods=['GET', 'POST'])
 def nodes():
     global ip
-    ip = request.remote_addr
+    ip = get_host_ip()
     return render_template('blockchain/nodes.html', ip_address=ip)
 
 
@@ -38,6 +48,7 @@ def mine():
 
     if form.validate_on_submit():
         node_identifier = form.wallet_address.data
+        flash('wallet binded')
 
     # 检查是否绑定挖矿钱包
     if node_identifier == '':
@@ -82,10 +93,6 @@ class MineThread(threading.Thread):
             #     'proof': block['proof'],
             #     'previous_hash': block['previous_hash'],
             # }
-            # return render_template('/blockchain/response.html',
-            #                        response=json.dumps(response,
-            #                                            indent=4).replace('\\r\\n',
-            #                                                              '<br>').replace(',', '<br>'))
 
 
 @blockchain.route('/mine/start', methods=['GET', 'POST'])
@@ -123,36 +130,38 @@ def transaction_local():
         message = str(sender) + str(recipient) + str(amount)
         try:
             signature = signature_generation(message, private_key)
-        except:
+        except ValueError:
             flash('invalid message')
         else:
+            url = f'http://{server_address}/blockchain/transactions_remote'
+            postdict = {
+                'sender': sender,
+                'recipient': recipient,
+                'amount': amount,
+                'signature': signature
+            }
             try:
-                index = blockchain_local.new_transaction(sender, recipient, amount, signature)
-            except:
-                flash('invalid key')
+                requests.post(url, json=postdict)
+            except ValueError:
+                flash('invalid transaction')
             else:
-                if index == -1:
-                    flash('invalid key')
-                else:
-                    url = 'http://127.0.0.1:5000/blockchain/transactions_remote'
-                    postdict = {
-                        'sender': sender,
-                        'recipient': recipient,
-                        'amount': amount,
-                        'signature': signature
-                    }
+                for node in blockchain_local.nodes:
+                    url = f'http://{node}/blockchain/transactions_remote'
                     try:
                         requests.post(url, json=postdict)
-                    except HTTPError as e:
-                        flash('Error: Broadcast failed')
-                        return render_template('blockchain/response.html', response=e.read())
-                    else:
-                        flash('Transaction will be added to Block {0}'.format(index))
-                        form.sender.data = ''
-                        form.recipient.data = ''
-                        form.amount.data = 0.0
-                        form.private_key.data = ''
-                        return render_template('blockchain/transactions.html', form=form)
+                    except HTTPError:
+                        flash('connect to {0} failed'.format(node))
+                        continue
+                    except ValueError:
+                        flash('invalid transaction')
+                        continue
+
+                flash('Transaction will be added to Block {0}'.format(index))
+                form.sender.data = ''
+                form.recipient.data = ''
+                form.amount.data = 0.0
+                form.private_key.data = ''
+                return render_template('blockchain/transactions.html', form=form)
     return render_template('blockchain/transactions.html', form=form)
 
 
@@ -167,27 +176,15 @@ def transaction_remote():
 
     # 验证签名
     try:
-        index = blockchain_local.new_transaction(values['sender'], values['recipient'],
-                                                 values['amount'], values['signature'])
-    except:
+        block_index = blockchain_local.new_transaction(values['sender'], values['recipient'],
+                                                       values['amount'], values['signature'])
+    except HTTPError:
         return 'Error: add transaction failed', 400
     else:
-        if index == -1:
-            return 'Error: invalid transaction', 400
+        if block_index == -1:
+            raise ValueError('invalid transaction')
         else:
             return jsonify(values), 200
-
-
-@blockchain.route('/chain', methods=['GET'])
-def full_chain():
-    response = {
-        'chain': blockchain_local.chain,
-        'length': len(blockchain_local.chain),
-    }
-    return render_template('/blockchain/response.html',
-                           response=json.dumps(response,
-                                               indent=4).replace('\\r\\n',
-                                                                 '<br>').replace(',', '<br>'))
 
 
 @blockchain.route('/wallet/obtain', methods=['GET'])
@@ -206,26 +203,27 @@ def obtain_wallet():
 @blockchain.route('/nodes/register_local', methods=['GET', 'POST'])
 def register_local_node():
     global ip
-    get_url = 'http://' + server_address + '/blockchain/nodes/get_remote'
-    post_url = 'http://' + server_address + '/blockchain/nodes/register_remote'
+    get_url = f'http://{server_address}/blockchain/nodes/get_remote'
+    post_url = f'http://{server_address}/blockchain/nodes/register_remote'
     postdict = {
-        'nodes': 'http://127.0.0.1:5001'
+        'nodes': f'http://{ip}:5000'
     }
 
-    blockchain_local.register_node(postdict['nodes'])
+    # blockchain_local.register_node(postdict['nodes'])
     try:
         r = requests.get(get_url)
     except HTTPError as e:
         flash('Error: get remote nodes failed')
         return render_template('/blockchain/response.html', response=e.read())
     else:
-        nodes = r.json().get('nodes')
-        for node in nodes:
+        node_list = r.json().get('nodes')
+        for node in node_list:
             blockchain_local.register_node('http://' + node)
-            url = 'http://' + node + '/blockchain/nodes/register_remote_node'
+            url = f'http://{node}/blockchain/nodes/register_remote_node'
             try:
                 requests.post(url, json=postdict)
             except HTTPError:
+                flash('connect to {0} failed'.format(node))
                 continue
 
     try:
@@ -255,17 +253,6 @@ def register_remote_node():
     return jsonify(response), 201
 
 
-# @blockchain.route('/nodes/get', methods=['GET'])
-# def get_nodes():
-#     response = {
-#         'nodes': list(blockchain_local.nodes),
-#     }
-#     return render_template('/blockchain/response.html',
-#                            response=json.dumps(response,
-#                                                indent=4).replace('\\n',
-#                                                                  '<br>').replace(',', '<br>'))
-
-
 @blockchain.route('/nodes/get_local', methods=['GET'])
 def get_local_nodes():
     response = {
@@ -288,17 +275,18 @@ def get_remote_nodes():
 @blockchain.route('/nodes/remove_local', methods=['GET', 'POST'])
 def remove_local_node():
     global ip
-    post_url = 'http://' + server_address + '/blockchain/nodes/remove_remote'
+    post_url = f'http://{server_address}/blockchain/nodes/remove_remote'
     postdict = {
-        'nodes': 'http://127.0.0.1:5001'
+        'nodes': f'http://{ip}:5000'
     }
 
-    blockchain_local.remove_node(postdict['nodes'])
+    # blockchain_local.remove_node(postdict['nodes'])
     for node in blockchain_local.nodes:
-        url = 'http://' + node + '/blockchain/nodes/remove_remote'
+        url = f'http://{node}/blockchain/nodes/remove_remote'
         try:
             requests.post(url, postdict)
         except HTTPError:
+            flash('connect to {0} failed'.format(node))
             continue
     blockchain_local.nodes.clear()
 
@@ -329,7 +317,7 @@ def remove_remote_node():
     return jsonify(response), 201
 
 
-@blockchain.route('/nodes/resolve', methods=['GET'])
+@blockchain.route('/chain_local', methods=['GET'])
 def consensus():
     replaced = blockchain_local.resolve_conflicts()
 
@@ -344,4 +332,16 @@ def consensus():
             'chain': blockchain_local.chain
         }
 
+    return render_template('/blockchain/response.html',
+                           response=json.dumps(response,
+                                               indent=4).replace('\\r\\n',
+                                                                 '<br>').replace(',', '<br>'))
+
+
+@blockchain.route('/chain_remote', methods=['GET'])
+def full_chain():
+    response = {
+        'chain': blockchain_local.chain,
+        'length': len(blockchain_local.chain),
+    }
     return jsonify(response), 200
