@@ -68,7 +68,7 @@ class Blockchain:
 
         return True
 
-    def resolve_conflicts(self) -> bool:
+    def resolve_conflicts(self, self_node) -> bool:
         """
         共识算法解决冲突
         使用网络中最长的链.
@@ -83,6 +83,8 @@ class Blockchain:
 
         # Grab and verify the chains from all the nodes in our network
         for node in neighbours:
+            if node == self_node:
+                continue
             response = requests.get(f'http://{node}/blockchain/chain_remote')
 
             if response.status_code == 200:
