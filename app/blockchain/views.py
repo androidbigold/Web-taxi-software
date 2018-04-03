@@ -12,13 +12,13 @@ import socket
 
 
 def get_host_ip():
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         s.connect(('8.8.8.8', 80))
-        ip = s.getsockname()[0]
+        ip_address = s.getsockname()[0]
     finally:
         s.close()
-    return ip
+    return ip_address
 
 
 ip = ''
@@ -64,6 +64,8 @@ class MineThread(threading.Thread):
         threading.Thread.__init__(self)
 
     def run(self):
+        global ip
+        self_node = ip + ':5000'
         while True:
             blockchain_local.mine_start()
             # We run the proof of work algorithm to get the next proof...
@@ -86,6 +88,20 @@ class MineThread(threading.Thread):
             # Forge the new Block by adding it to the chain
             blockchain_local.new_block(proof, None)
 
+            for node in blockchain_local.nodes:
+                if node == self_node:
+                    continue
+                url = f'http://{node}/blockchain/mine/new_block'
+                post_data = {
+                    'new_block': blockchain_local.chain[-1]
+                }
+                try:
+                    requests.post(url, json=post_data)
+                except HTTPError:
+                    flash(f'connect to {node} failed')
+                    continue
+                else:
+                    pass
             # response = {
             #     'message': "New Block Forged",
             #     'index': block['index'],
@@ -116,6 +132,25 @@ def mine_stop():
     form = BindWalletForm()
     form.wallet_address.data = node_identifier
     return render_template('/blockchain/mine.html', form=form)
+
+
+@blockchain.route('/mine/new_block', methods=['GET', 'POST'])
+def new_block_remote():
+    values = request.get_json()
+
+    if 'new_block' not in values:
+        return 'Missing values', 400
+
+    new_block = values['new_block']
+    last_block = blockchain_local.last_block
+    if blockchain_local.valid_proof(last_block['proof'], new_block['proof']) is False:
+        return 'invalid block', 401
+
+    blockchain_local.mine_stop()
+    mine_thread = MineThread()
+    mine_thread.start()
+    blockchain_local.chain.append(new_block)
+    return 'add new block successfully', 200
 
 
 @blockchain.route('/transactions_local', methods=['GET', 'POST'])
@@ -165,7 +200,7 @@ def transaction_local():
                         try:
                             requests.post(url, json=postdict)
                         except HTTPError:
-                            flash('connect to {0} failed'.format(node))
+                            flash(f'connect to {node} failed')
                             continue
                         except ValueError:
                             flash('invalid transaction')
@@ -194,7 +229,7 @@ def transaction_remote():
         block_index = blockchain_local.new_transaction(values['sender'], values['recipient'],
                                                        values['amount'], values['signature'])
     except HTTPError:
-        return 'Error: add transaction failed', 400
+        return 'Error: add transaction failed', 401
     else:
         if block_index == -1:
             raise ValueError('invalid transaction')
@@ -268,7 +303,7 @@ def register_remote_node():
         'message': 'New nodes have been added',
         'nodes': list(blockchain_local.nodes),
     }
-    return jsonify(response), 201
+    return jsonify(response), 200
 
 
 @blockchain.route('/nodes/get_local', methods=['GET'])
@@ -323,7 +358,7 @@ def remove_local_node():
         try:
             requests.post(url, postdict)
         except HTTPError:
-            flash('connect to {0} failed'.format(node))
+            flash(f'connect to {node} failed')
             continue
     blockchain_local.nodes.clear()
 
@@ -351,7 +386,7 @@ def remove_remote_node():
         'message': 'The nodes have been removed',
         'nodes': list(blockchain_local.nodes),
     }
-    return jsonify(response), 201
+    return jsonify(response), 200
 
 
 @blockchain.route('/chain_local', methods=['GET'])
