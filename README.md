@@ -7,7 +7,7 @@ Virtual environment: pipenv
 
 Version 2.1   
 interact with nodes in the blockchain net   
-optimize node functions,a node can't be registered or removed repeatedly   
+optimize node functions,a node can't be registered or removed repeatedly    
 improve the process flow   
    
 Version 2.0   
