@@ -113,13 +113,17 @@ class MineThread(threading.Thread):
 
 @blockchain.route('/mine/start', methods=['GET', 'POST'])
 def mine_start():
-    mine_thread = MineThread()
-    mine_thread.start()
-    flash('mine start')
-
     global node_identifier
     form = BindWalletForm()
     form.wallet_address.data = node_identifier
+
+    if form.wallet_address.data == '':
+        flash('Please bind a wallet firstly')
+        return redirect(url_for('blockchain.mine', form=form))
+
+    mine_thread = MineThread()
+    mine_thread.start()
+    flash('mine start')
     return render_template('/blockchain/mine.html', form=form)
 
 
