@@ -5,7 +5,7 @@
 - Web-framework: flask   
 - Virtual environment: pipenv   
 
-### version 2.2
+### Version 2.2
 - add wallet balance function
 
 ### Version 2.1   
