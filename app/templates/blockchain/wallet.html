@@ -1,0 +1,8 @@
+{% extends "blockchain/base.html" %}
+{% import "bootstrap/wtf.html" as wtf %}
+
+{% block page_content %}
+<div class="col-sm-9 col-md-10">
+	{{ wtf.quick_form(form) }}
+</div>
+{% endblock %}
