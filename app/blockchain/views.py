@@ -2,7 +2,7 @@ from flask import Flask, jsonify, request, render_template, redirect, url_for, f
 from . import blockchain
 from .Cryptography import *
 from .Block import *
-from .forms import TransactionForm, BindWalletForm
+from .forms import TransactionForm, BindWalletForm, WalletBalanceForm
 import requests
 from urllib.error import HTTPError
 import json
@@ -252,6 +252,25 @@ def obtain_wallet():
                            response=json.dumps(response,
                                                indent=4).replace('\\n',
                                                                  '<br>').replace(',', '<br>').replace(':', ':<br>'))
+
+
+@blockchain.route('/wallet/balance', methods=['GET', 'POST'])
+def wallet_balance():
+    form = WalletBalanceForm()
+
+    if form.validate_on_submit():
+        b, trans = blockchain_local.balance(form.wallet_address.data)
+        flash('search finished')
+        response = {
+            'balance': b,
+            'transactions': trans,
+        }
+        return render_template('/blockchain/response.html',
+                               response=json.dumps(response,
+                                                   indent=4).replace('\\n',
+                                                                     '<br>').replace(',', '<br>').replace(':', ':<br>'))
+
+    return render_template('/blockchain/wallet.html', form=form)
 
 
 @blockchain.route('/nodes/register_local', methods=['GET', 'POST'])

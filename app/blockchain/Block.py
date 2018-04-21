@@ -198,3 +198,20 @@ class Blockchain:
     def mine_stop(self):
         self.__is_mine = False
 
+    def balance(self, wallet):
+        balance = 0.0
+        trans = []
+
+        for block in self.chain:
+            for transaction in block['transactions']:
+                if transaction['recipient'] == wallet:
+                    balance += transaction['amount']
+                    trans.append(transaction)
+                    trans[-1].update({'timestamp': block['timestamp']})
+                elif transaction['sender'] == wallet:
+                    balance -= transaction['amount']
+                    trans.append(transaction)
+                    trans[-1].update({'timestamp': block['timestamp']})
+
+        return balance, trans
+

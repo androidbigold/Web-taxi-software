@@ -14,3 +14,8 @@ class TransactionForm(FlaskForm):
 class BindWalletForm(FlaskForm):
     wallet_address = TextAreaField('Wallet Address', validators=[Required()])
     bind = SubmitField('Bind')
+
+
+class WalletBalanceForm(FlaskForm):
+    wallet_address = TextAreaField('Wallet Address', validators=[Required()])
+    search = SubmitField('Search')
